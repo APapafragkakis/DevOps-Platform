@@ -1,0 +1,135 @@
+name: CD
+
+on:
+  # Triggers only after CI completes successfully on main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: ["main"]
+
+env:
+  IMAGE_NAME: devops-platform
+  K8S_NAMESPACE: devops-platform
+
+jobs:
+  # -------------------------------------------------------
+  # Job 1: Deploy to Staging
+  # -------------------------------------------------------
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      name: staging
+      url: https://staging.devops-platform.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag from triggering CI run
+        id: vars
+        run: |
+          SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+          echo "IMAGE_TAG=sha-${SHA}" >> $GITHUB_OUTPUT
+          echo "Deploying image tag: sha-${SHA}"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.30.0"
+
+      - name: Configure kubeconfig (staging cluster)
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig.yaml
+          echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
+
+      - name: Deploy to staging
+        run: |
+          # Update the image tag in the deployment
+          kubectl set image deployment/devops-platform \
+            app=ghcr.io/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }} \
+            -n ${{ env.K8S_NAMESPACE }}-staging
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/devops-platform \
+            -n ${{ env.K8S_NAMESPACE }}-staging \
+            --timeout=120s
+
+      - name: Run smoke test against staging
+        run: |
+          STAGING_URL="https://staging.devops-platform.example.com"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${STAGING_URL}/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "Smoke test failed — /health returned HTTP $STATUS"
+            exit 1
+          fi
+          echo "Smoke test passed ✅"
+
+  # -------------------------------------------------------
+  # Job 2: Deploy to Production (requires manual approval)
+  # -------------------------------------------------------
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment:
+      name: production
+      url: https://devops-platform.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: vars
+        run: |
+          SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+          echo "IMAGE_TAG=sha-${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.30.0"
+
+      - name: Configure kubeconfig (production cluster)
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig.yaml
+          echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
+
+      - name: Deploy to production
+        run: |
+          kubectl set image deployment/devops-platform \
+            app=ghcr.io/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }} \
+            -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/devops-platform \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=180s
+
+      - name: Run smoke test against production
+        run: |
+          PROD_URL="https://devops-platform.example.com"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${PROD_URL}/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "Production smoke test failed — rolling back..."
+            kubectl rollout undo deployment/devops-platform -n ${{ env.K8S_NAMESPACE }}
+            exit 1
+          fi
+          echo "Production smoke test passed ✅"
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "🚀 Deployed ${{ steps.vars.outputs.IMAGE_TAG }} to production successfully"
+          # Add Slack/Discord webhook here if needed
+          # curl -X POST ${{ secrets.SLACK_WEBHOOK }} -d '{"text":"Deployed to prod ✅"}'
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed — rolling back"
+          kubectl rollout undo deployment/devops-platform -n ${{ env.K8S_NAMESPACE }}

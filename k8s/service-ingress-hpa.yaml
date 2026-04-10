@@ -1,0 +1,87 @@
+---
+# Service — internal load balancer for the pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-platform
+  namespace: devops-platform
+  labels:
+    app: devops-platform
+spec:
+  selector:
+    app: devops-platform
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
+
+---
+# Ingress — exposes the service to the outside world via Nginx
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: devops-platform
+  namespace: devops-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # automatic TLS
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - devops-platform.example.com
+      secretName: devops-platform-tls
+  rules:
+    - host: devops-platform.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: devops-platform
+                port:
+                  number: 80
+
+---
+# HPA — auto-scales pods based on CPU usage
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: devops-platform
+  namespace: devops-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: devops-platform
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# Secret template — in real usage, populate via CI/CD or Vault
+# kubectl create secret generic devops-platform-secrets \
+#   --from-literal=DATABASE_URL="postgresql://..." -n devops-platform
+apiVersion: v1
+kind: Secret
+metadata:
+  name: devops-platform-secrets
+  namespace: devops-platform
+type: Opaque
+stringData:
+  DATABASE_URL: "postgresql://devops:CHANGE_ME@postgres:5432/devopsdb"
