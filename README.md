@@ -2,8 +2,8 @@
 
 A production-grade deployment platform for a FastAPI microservice, demonstrating
 end-to-end DevOps practices: containerization, CI/CD, Infrastructure as Code,
-Kubernetes orchestration, Redis caching, Alembic migrations, rate limiting,
-structured logging, and observability.
+Kubernetes orchestration, JWT authentication, Redis caching, distributed tracing,
+Helm packaging, and load testing.
 
 ---
 
@@ -12,8 +12,8 @@ structured logging, and observability.
 ```
                          ┌──────────────────────────────────┐
                          │          GitHub Actions           │
-                         │  CI: lint → test → scan → build   │
-                         │  CD: staging → approval → prod    │
+                         │  lint → test → scan → build       │
+                         │  → load test (k6) → deploy        │
                          └────────────┬─────────────────────┘
                                       │ push image
                                       ▼
@@ -21,32 +21,33 @@ structured logging, and observability.
                               │  GHCR Image  │
                               │  Registry    │
                               └──────┬───────┘
-                                     │ kubectl set image
-          ┌──────────────────────────▼───────────────────────────┐
+                                     │ helm upgrade
+          ┌──────────────────────────▼────────────────────────────┐
           │                    AWS EKS Cluster                    │
           │   ┌──────────────────────────────────────────────┐    │
           │   │           devops-platform namespace          │    │
-          │   │   ┌─────────┐  ┌─────────┐  ┌─────────┐     │    │
-          │   │   │  Pod 1  │  │  Pod 2  │  │  Pod N  │     │    │
-          │   │   │FastAPI  │  │FastAPI  │  │FastAPI  │     │    │
-          │   │   └────┬────┘  └────┬────┘  └────┬────┘     │    │
+          │   │   ┌─────────┐  ┌─────────┐  ┌─────────┐      │    │
+          │   │   │  Pod 1  │  │  Pod 2  │  │  Pod N  │      │    │
+          │   │   │FastAPI  │  │FastAPI  │  │FastAPI  │      │    │
+          │   │   └────┬────┘  └────┬────┘  └────┬────┘      │    │
           │   │        └───────────┬┘             │  HPA     │    │
-          │   │               ┌───▼──────┐   min:2 max:6    │    │
+          │   │               ┌───▼──────┐   min:2 max:6     │    │
           │   │               │ Service  │                   │    │
           │   │               └───┬──────┘                   │    │
           │   │               ┌───▼──────┐                   │    │
           │   │               │  Ingress │                   │    │
           │   └───────────────┴──────────┴───────────────────┘    │
-          │         │                        │                     │
+          │         │                        │                    │
           │  ┌──────▼──────┐       ┌─────────▼──────┐             │
-          │  │ RDS Postgres │       │ ElastiCache    │             │
-          │  │ (private)    │       │ Redis          │             │
+          │  │ RDS Postgres │      │ ElastiCache    │            │
+          │  │ (private)    │      │ Redis          │            │
           │  └─────────────┘       └────────────────┘             │
-          └──────────────────────────────────────────────────────┘
+          └───────────────────────────────────────────────────────┘
                                    │
                     ┌──────────────▼───────────────┐
-                    │     Monitoring (local)        │
+                    │         Observability         │
                     │  Prometheus → Grafana :3000   │
+                    │  Jaeger tracing   :16686      │
                     └──────────────────────────────┘
 ```
 
@@ -54,20 +55,22 @@ structured logging, and observability.
 
 ## Tech Stack
 
-| Layer              | Technology                                      |
-|--------------------|-------------------------------------------------|
-| Application        | Python 3.12 / FastAPI / SQLAlchemy              |
-| Database           | PostgreSQL 16 + Alembic migrations              |
-| Caching            | Redis 7 (write-through, TTL 60s, graceful degradation) |
-| Rate Limiting      | slowapi (60 req/min reads, 30 req/min writes)   |
-| Observability      | Prometheus metrics + JSON structured logging    |
-| Containerization   | Docker (multi-stage build, non-root user)       |
-| Local Dev          | Docker Compose (app + postgres + redis + grafana) |
-| CI/CD              | GitHub Actions                                  |
-| Image Registry     | GitHub Container Registry (GHCR)                |
-| Infrastructure     | Terraform (AWS VPC + EKS + RDS)                 |
-| Orchestration      | Kubernetes (EKS, HPA, rolling updates)          |
-| Security Scanning  | Trivy (CRITICAL/HIGH CVEs)                      |
+| Layer              | Technology                                              |
+|--------------------|---------------------------------------------------------|
+| Application        | Python 3.12 / FastAPI / SQLAlchemy                      |
+| Authentication     | JWT (python-jose) + bcrypt password hashing             |
+| Database           | PostgreSQL 16 + Alembic migrations                      |
+| Caching            | Redis 7 (write-through, TTL 60s, graceful degradation)  |
+| Rate Limiting      | slowapi (60 req/min reads, 30 req/min writes)           |
+| Observability      | Prometheus metrics + Jaeger distributed tracing         |
+| Containerization   | Docker (multi-stage build, non-root user)               |
+| Local Dev          | Docker Compose (app + postgres + redis + jaeger + grafana) |
+| CI/CD              | GitHub Actions (lint → test → scan → build → load test) |
+| Load Testing       | k6 (smoke test in CI, p95 < 500ms threshold)            |
+| Image Registry     | GitHub Container Registry (GHCR)                        |
+| Infrastructure     | Terraform (AWS VPC + EKS + RDS)                         |
+| Orchestration      | Kubernetes via Helm chart (HPA, rolling updates)        |
+| Security Scanning  | Trivy (CRITICAL/HIGH CVEs)                              |
 
 ---
 
@@ -76,38 +79,56 @@ structured logging, and observability.
 Prerequisites: Docker + Docker Compose
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/DevOps-Platform
+git clone https://github.com/APapafragkakis/DevOps-Platform
 cd DevOps-Platform
 
-# Start everything
-make up
-
-# Or without Make:
 docker compose up -d --build
 ```
 
-| Service    | URL                          |
-|------------|------------------------------|
-| API        | http://localhost:8000        |
-| Swagger UI | http://localhost:8000/docs   |
-| Metrics    | http://localhost:8000/metrics |
+| Service    | URL                            |
+|------------|--------------------------------|
+| API docs   | http://localhost:8000/docs     |
+| Metrics    | http://localhost:8000/metrics  |
 | Grafana    | http://localhost:3000 (admin/admin) |
-| Prometheus | http://localhost:9090        |
+| Prometheus | http://localhost:9090          |
+| Jaeger UI  | http://localhost:16686         |
+
+---
+
+## Authentication Flow
+
+All `/items` endpoints require a JWT token.
+
+```bash
+# 1. Register
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alex", "password": "secret"}'
+
+# 2. Login — get token
+curl -X POST http://localhost:8000/auth/token \
+  -d "username=alex&password=secret"
+
+# 3. Use token
+curl http://localhost:8000/items \
+  -H "Authorization: Bearer <token>"
+```
+
+Or use the **Authorize** button in Swagger UI at `/docs`.
 
 ---
 
 ## Make Commands
 
 ```bash
-make help        # List all commands
 make up          # Start all services
 make down        # Stop all services
 make logs        # Follow app logs
 make test        # Run tests with coverage
 make lint        # Run flake8
 make migrate     # Run Alembic migrations
-make migration msg="add users table"  # Generate new migration
-make health      # Curl /health and pretty-print
+make migration msg="add users table"
+make health      # Curl /health
 make clean       # Remove containers + volumes
 ```
 
@@ -119,24 +140,25 @@ make clean       # Remove containers + volumes
 git push (main)
     │
     ├── lint         flake8
-    ├── test         pytest + coverage (SQLite in CI — no external DB)
-    ├── security     Trivy scans for CRITICAL/HIGH CVEs
+    ├── test         pytest + coverage (SQLite in CI)
+    ├── security     Trivy — CRITICAL/HIGH CVEs
     ├── build        Docker multi-stage → push to GHCR
-    ├── deploy staging   kubectl rolling update → smoke test /health
-    └── deploy prod      Manual approval → rolling update → smoke test → auto-rollback
+    ├── load-test    k6 smoke test (p95 < 500ms, error rate < 1%)
+    ├── deploy staging   helm upgrade → smoke test /health
+    └── deploy prod      manual approval → helm upgrade → auto-rollback
 ```
 
 ---
 
-## Run Tests Locally
+## Deploy with Helm
 
 ```bash
-cd app
-pip install -r requirements.txt
-pytest tests/ -v --cov=. --cov-report=term-missing
+helm upgrade --install devops-platform ./helm/devops-platform \
+  --set secrets.databaseUrl="postgresql://..." \
+  --set secrets.secretKey="your-secret-key" \
+  --set secrets.redisUrl="redis://..." \
+  --set image.tag="sha-abc1234"
 ```
-
-Tests use SQLite in-memory — zero external dependencies.
 
 ---
 
@@ -148,7 +170,6 @@ terraform init
 terraform plan  -var="environment=staging" -var="db_password=SECRET"
 terraform apply -var="environment=staging" -var="db_password=SECRET"
 
-# Configure kubectl
 aws eks update-kubeconfig --name $(terraform output -raw eks_cluster_name)
 ```
 
@@ -156,58 +177,44 @@ aws eks update-kubeconfig --name $(terraform output -raw eks_cluster_name)
 
 ---
 
-## Deploy to Kubernetes
+## Run Tests
 
 ```bash
-kubectl apply -f k8s/
-kubectl rollout status deployment/devops-platform -n devops-platform
-kubectl get pods -n devops-platform -w
+cd app
+pip install -r requirements.txt
+pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
----
-
-## Database Migrations (Alembic)
-
-```bash
-# Apply all pending migrations
-make migrate
-
-# Generate a migration from model changes
-make migration msg="add users table"
-
-# Roll back one migration
-make rollback
-```
+Tests use SQLite in-memory — zero external dependencies.
 
 ---
 
 ## Engineering Decisions
 
+**Why JWT over sessions?**
+JWTs are stateless — no shared session store needed across pods.
+Each token is self-contained and verified with a secret key,
+making horizontal scaling trivial.
+
 **Why Redis caching with graceful degradation?**
-The cache layer wraps every Redis call in try/except and returns `None` on failure.
-The app continues serving requests from PostgreSQL if Redis is unavailable —
-no cascading failure from a cache outage.
+Every Redis call is wrapped in try/except. If Redis goes down,
+the app falls back to Postgres transparently — no cascading failure.
 
-**Why rate limiting?**
-Unprotected APIs are a common attack surface. `slowapi` adds per-IP rate limits
-(60/min reads, 30/min writes) with zero application logic changes — it's
-decorator-based middleware.
+**Why Helm over raw Kubernetes manifests?**
+Helm templates let you deploy to staging and prod from the same chart
+with different values. No copy-pasting manifests, no config drift.
 
-**Why structured JSON logging?**
-Log aggregators (CloudWatch, Datadog, Loki) ingest JSON natively.
-Every log line is machine-parseable with consistent fields,
-making alerting and dashboards trivial to build.
+**Why k6 in CI?**
+Catching performance regressions before they hit production.
+The pipeline fails if p95 latency exceeds 500ms or error rate exceeds 1%.
 
 **Why Alembic instead of `create_all`?**
-`create_all` is fine for local dev but unsuitable for production:
-it can't alter existing tables, has no rollback, and doesn't track
-schema history. Alembic gives us versioned, reversible migrations
-that run automatically on container startup.
+`create_all` can't alter existing tables and has no rollback.
+Alembic gives versioned, reversible migrations that run automatically on startup.
 
 **Why `maxUnavailable: 0` in rolling updates?**
 With 2 replicas, allowing 1 unavailable = 50% capacity loss during deploy.
-`maxUnavailable: 0` + `maxSurge: 1` brings up the new pod before
-terminating the old one — zero-downtime deployment.
+`maxUnavailable: 0` + `maxSurge: 1` ensures zero-downtime deployments.
 
 **Why soft delete?**
 Hard deletes make production debugging much harder.
@@ -220,37 +227,34 @@ Hard deletes make production debugging much harder.
 ```
 DevOps-Platform/
 ├── app/
-│   ├── main.py              # FastAPI app, routes, rate limiting
-│   ├── database.py          # SQLAlchemy engine (env-aware)
-│   ├── models.py            # ORM models
-│   ├── schemas.py           # Pydantic schemas
-│   ├── crud.py              # DB operations
-│   ├── cache.py             # Redis cache layer (graceful degradation)
-│   ├── logging_config.py    # Structured JSON logging
-│   ├── requirements.txt
-│   ├── Dockerfile           # Multi-stage, non-root, healthcheck
-│   ├── alembic.ini
+│   ├── main.py              # routes, rate limiting, JWT protection
+│   ├── auth.py              # JWT token creation and validation
+│   ├── cache.py             # Redis layer with graceful degradation
+│   ├── tracing.py           # OpenTelemetry / Jaeger setup
+│   ├── database.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── crud.py
+│   ├── Dockerfile           # multi-stage, non-root, healthcheck
 │   ├── migrations/
-│   │   ├── env.py
 │   │   └── versions/
-│   │       └── 0001_initial_items_table.py
+│   │       ├── 0001_initial_items_table.py
+│   │       └── 0002_add_users_table.py
 │   └── tests/
-│       └── test_main.py
-├── docker-compose.yml       # app + postgres + redis + prometheus + grafana
-├── Makefile                 # Developer shortcuts
+│       └── test_main.py     # 11 tests, SQLite in-memory
+├── helm/
+│   └── devops-platform/     # Helm chart (Deployment, Service, HPA, Secret)
+├── load-tests/
+│   └── smoke.js             # k6 load test (runs in CI)
+├── docker-compose.yml       # app + postgres + redis + jaeger + grafana
+├── Makefile
 ├── monitoring/
 │   └── prometheus.yml
-├── k8s/
-│   ├── namespace.yaml
-│   ├── deployment.yaml      # Rolling update, probes, resource limits
-│   └── service-ingress-hpa.yaml
-├── terraform/
-│   ├── main.tf              # VPC + EKS + RDS
-│   ├── variables.tf
-│   └── outputs.tf
+├── k8s/                     # raw manifests (superseded by Helm chart)
+├── terraform/               # AWS VPC + EKS + RDS
 └── .github/
     └── workflows/
-        ├── ci.yml           # lint → test → security → build
+        ├── ci.yml           # lint → test → security → build → load-test
         └── cd.yml           # staging → approval → production
 ```
 
@@ -258,12 +262,11 @@ DevOps-Platform/
 
 ## What I'd Add Next
 
-- Helm chart to replace raw Kubernetes manifests
 - ArgoCD for GitOps-style continuous delivery
-- AWS Secrets Manager / Vault integration
-- JWT authentication with refresh tokens
-- k6 load testing in the CD pipeline
-- Distributed tracing with OpenTelemetry
+- AWS Secrets Manager integration
+- Alembic migrations in the CD pipeline
+- JWT refresh tokens
+- Grafana dashboards as code
 
 ---
 
