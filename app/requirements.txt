@@ -24,13 +24,7 @@ bcrypt==4.0.1
 python-multipart==0.0.9
 
 # Observability
-setuptools>=68.0.0
 prometheus-fastapi-instrumentator==7.0.0
-opentelemetry-api==1.25.0
-opentelemetry-sdk==1.25.0
-opentelemetry-instrumentation-fastapi==0.46b0
-opentelemetry-instrumentation-sqlalchemy==0.46b0
-opentelemetry-exporter-otlp-proto-grpc==1.25.0
 
 # Testing
 pytest==8.2.0
