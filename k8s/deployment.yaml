@@ -70,3 +70,4 @@ spec:
           labelSelector:
             matchLabels:
               app: devops-platform
+

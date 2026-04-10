@@ -128,3 +128,4 @@ def test_pagination():
     for i in range(5):
         client.post("/items", json={"name": f"item {i}"}, headers=headers)
     assert len(client.get("/items?limit=2&skip=0", headers=headers).json()) == 2
+

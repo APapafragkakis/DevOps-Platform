@@ -162,3 +162,4 @@ def delete_item(
         raise HTTPException(status_code=404, detail="item not found")
     cache_delete(ITEMS_CACHE_KEY)
     logger.info("item deleted", extra={"item_id": item_id})
+

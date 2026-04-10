@@ -51,3 +51,4 @@ metrics: ## Show Prometheus metrics (first 20 lines)
 
 clean: ## Remove volumes and containers
 	docker compose down -v --remove-orphans
+

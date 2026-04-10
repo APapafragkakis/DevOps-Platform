@@ -85,3 +85,4 @@ metadata:
 type: Opaque
 stringData:
   DATABASE_URL: "postgresql://devops:CHANGE_ME@postgres:5432/devopsdb"
+

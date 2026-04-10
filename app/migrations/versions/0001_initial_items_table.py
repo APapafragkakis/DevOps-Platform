@@ -34,3 +34,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_items_id", table_name="items")
     op.drop_table("items")
+

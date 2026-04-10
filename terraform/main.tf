@@ -136,3 +136,4 @@ resource "aws_db_instance" "main" {
 
   multi_az = var.environment == "production" # HA only in prod
 }
+

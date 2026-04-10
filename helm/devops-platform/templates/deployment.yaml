@@ -64,3 +64,4 @@ spec:
           labelSelector:
             matchLabels:
               app: {{ .Release.Name }}
+

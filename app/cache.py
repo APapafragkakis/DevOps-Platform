@@ -66,3 +66,4 @@ def redis_ping() -> bool:
         return client.ping()
     except Exception:
         return False
+

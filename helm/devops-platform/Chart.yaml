@@ -4,3 +4,4 @@ description: Production-grade FastAPI service with Redis caching, JWT auth, and 
 type: application
 version: 1.0.0
 appVersion: "3.0.0"
+
