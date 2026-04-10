@@ -11,9 +11,9 @@ Helm packaging, and load testing.
 
 ```
                          ┌──────────────────────────────────┐
-                         │          GitHub Actions           │
-                         │  lint → test → scan → build       │
-                         │  → load test (k6) → deploy        │
+                         │          GitHub Actions          │
+                         │  lint → test → scan → build      │
+                         │  → load test (k6) → deploy       │
                          └────────────┬─────────────────────┘
                                       │ push image
                                       ▼
