@@ -1,11 +1,21 @@
 # DevOps Platform
 
-A production-grade deployment platform for a FastAPI microservice, demonstrating
-end-to-end DevOps practices: containerization, CI/CD, Infrastructure as Code,
-Kubernetes orchestration, JWT authentication, Redis caching, distributed tracing,
-Helm packaging, and load testing.
+Production-grade DevOps platform demonstrating end-to-end cloud-native system design and deployment.
+
+Built as a real-world backend + DevOps project, this platform showcases hands-on experience with Kubernetes, Docker, CI/CD pipelines, Infrastructure as Code (Terraform on AWS), and distributed system design.
+
+Designed and implemented by an MSc Computer Science student with a focus on Backend & DevOps engineering.
 
 ---
+
+## Key Highlights
+
+- End-to-end CI/CD pipeline (GitHub Actions → GHCR → Kubernetes)
+- Kubernetes deployment on AWS EKS with Helm and HPA autoscaling
+- Infrastructure provisioning with Terraform (VPC, EKS, RDS)
+- Production-ready backend (FastAPI + PostgreSQL + Redis)
+- Observability stack (Prometheus, Grafana, Jaeger)
+- Load-tested system (k6, p95 < 500ms)
 
 ## Architecture
 
