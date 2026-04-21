@@ -20,7 +20,6 @@ class Item(ItemBase):
     created_at: datetime
 
 
-# Auth schemas
 class UserCreate(BaseModel):
     username: str
     password: str

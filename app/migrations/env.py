@@ -4,7 +4,6 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# Import your models so Alembic can detect schema changes
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import models  # noqa: F401
@@ -12,7 +11,6 @@ from database import Base
 
 config = context.config
 
-# Override sqlalchemy.url with environment variable if set
 db_url = os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
 config.set_main_option("sqlalchemy.url", db_url)
 

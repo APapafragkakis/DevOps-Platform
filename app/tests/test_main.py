@@ -57,14 +57,12 @@ def auth_headers(token=None):
     return {"Authorization": f"Bearer {token or get_token()}"}
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
 def test_health_check():
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "healthy"
 
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
 def test_register():
     r = client.post("/auth/register", json={"username": "alice", "password": "secret"})
     assert r.status_code == 201
@@ -90,7 +88,6 @@ def test_login_wrong_password():
     assert r.status_code == 401
 
 
-# ── Items ─────────────────────────────────────────────────────────────────────
 def test_items_require_auth():
     r = client.get("/items")
     assert r.status_code == 401

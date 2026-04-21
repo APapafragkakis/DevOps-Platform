@@ -1,5 +1,4 @@
 ---
-# Service — internal load balancer for the pods
 apiVersion: v1
 kind: Service
 metadata:
@@ -18,7 +17,7 @@ spec:
   type: ClusterIP
 
 ---
-# Ingress — exposes the service to the outside world via Nginx
+
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -46,7 +45,6 @@ spec:
                   number: 80
 
 ---
-# HPA — auto-scales pods based on CPU usage
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -74,9 +72,6 @@ spec:
           averageUtilization: 80
 
 ---
-# Secret template — in real usage, populate via CI/CD or Vault
-# kubectl create secret generic devops-platform-secrets \
-#   --from-literal=DATABASE_URL="postgresql://..." -n devops-platform
 apiVersion: v1
 kind: Secret
 metadata:

@@ -61,7 +61,6 @@ def get_db():
         db.close()
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["ops"])
 def health_check(db: Session = Depends(get_db)):
     db_ok = True
@@ -86,7 +85,6 @@ def health_check(db: Session = Depends(get_db)):
     }
 
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
 @app.post("/auth/register", response_model=schemas.UserOut, status_code=201, tags=["auth"])
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if crud.get_user_by_username(db, user.username):
@@ -111,7 +109,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": token, "token_type": "bearer"}
 
 
-# ── Items (protected) ─────────────────────────────────────────────────────────
 ITEMS_CACHE_KEY = "items:all"
 
 
@@ -162,4 +159,3 @@ def delete_item(
         raise HTTPException(status_code=404, detail="item not found")
     cache_delete(ITEMS_CACHE_KEY)
     logger.info("item deleted", extra={"item_id": item_id})
-

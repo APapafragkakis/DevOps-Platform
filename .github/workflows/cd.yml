@@ -12,9 +12,6 @@ env:
   K8S_NAMESPACE: devops-platform
 
 jobs:
-  # -------------------------------------------------------
-  # Job 1: Deploy to Staging
-  # -------------------------------------------------------
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -65,11 +62,8 @@ jobs:
             echo "Smoke test failed — /health returned HTTP $STATUS"
             exit 1
           fi
-          echo "Smoke test passed ✅"
+          echo "Smoke test passed"
 
-  # -------------------------------------------------------
-  # Job 2: Deploy to Production (requires manual approval)
-  # -------------------------------------------------------
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -119,18 +113,18 @@ jobs:
             kubectl rollout undo deployment/devops-platform -n ${{ env.K8S_NAMESPACE }}
             exit 1
           fi
-          echo "Production smoke test passed ✅"
+          echo "Production smoke test passed"
 
       - name: Notify on success
         if: success()
         run: |
-          echo "🚀 Deployed ${{ steps.vars.outputs.IMAGE_TAG }} to production successfully"
+          echo "Deployed ${{ steps.vars.outputs.IMAGE_TAG }} to production successfully"
           # Add Slack/Discord webhook here if needed
-          # curl -X POST ${{ secrets.SLACK_WEBHOOK }} -d '{"text":"Deployed to prod ✅"}'
+          # curl -X POST ${{ secrets.SLACK_WEBHOOK }} -d '{"text":"Deployed to prod successfully"}'
 
       - name: Rollback on failure
         if: failure()
         run: |
-          echo "❌ Deployment failed — rolling back"
+          echo "Deployment failed"
           kubectl rollout undo deployment/devops-platform -n ${{ env.K8S_NAMESPACE }}
 

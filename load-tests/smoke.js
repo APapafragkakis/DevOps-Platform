@@ -16,7 +16,6 @@ export const options = {
 const BASE_URL = __ENV.BASE_URL || "http://localhost:8000";
 
 export function setup() {
-  // register a test user and get a token
   const reg = http.post(`${BASE_URL}/auth/register`, JSON.stringify({
     username: "loadtest_user",
     password: "loadtest_pass",
@@ -35,16 +34,13 @@ export default function (data) {
     Authorization: `Bearer ${data.token}`,
     "Content-Type": "application/json",
   };
-
-  // health check (no auth needed)
   const health = http.get(`${BASE_URL}/health`);
   check(health, { "health 200": (r) => r.status === 200 });
 
-  // list items
   const list = http.get(`${BASE_URL}/items`, { headers });
   check(list, { "items 200": (r) => r.status === 200 });
 
-  // create item
+
   const create = http.post(`${BASE_URL}/items`,
     JSON.stringify({ name: `item-${Date.now()}`, description: "load test" }),
     { headers }
