@@ -8,7 +8,6 @@ terraform {
     }
   }
 
-  # Remote state — keep this in S3 so the team shares state
   backend "s3" {
     bucket         = "devops-platform-tfstate"
     key            = "prod/terraform.tfstate"
@@ -30,9 +29,6 @@ provider "aws" {
   }
 }
 
-# -------------------------------------------------------
-# VPC
-# -------------------------------------------------------
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.8"
@@ -45,11 +41,10 @@ module "vpc" {
   public_subnets  = var.public_subnet_cidrs
 
   enable_nat_gateway   = true
-  single_nat_gateway   = var.environment != "production" # save cost in staging
+  single_nat_gateway   = var.environment != "production"
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  # Required tags for EKS to discover subnets
   public_subnet_tags = {
     "kubernetes.io/role/elb" = 1
   }
@@ -58,9 +53,6 @@ module "vpc" {
   }
 }
 
-# -------------------------------------------------------
-# EKS Cluster
-# -------------------------------------------------------
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.14"
@@ -72,7 +64,6 @@ module "eks" {
   subnet_ids                     = module.vpc.private_subnets
   cluster_endpoint_public_access = true
 
-  # Managed node group
   eks_managed_node_groups = {
     main = {
       instance_types = [var.node_instance_type]
@@ -87,9 +78,6 @@ module "eks" {
   }
 }
 
-# -------------------------------------------------------
-# RDS PostgreSQL
-# -------------------------------------------------------
 resource "aws_db_subnet_group" "main" {
   name       = "${var.project_name}-db-subnet-group"
   subnet_ids = module.vpc.private_subnets
@@ -125,7 +113,7 @@ resource "aws_db_instance" "main" {
 
   db_name  = "devopsdb"
   username = "devops"
-  password = var.db_password # set via TF_VAR_db_password env var
+  password = var.db_password
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
@@ -134,6 +122,5 @@ resource "aws_db_instance" "main" {
   deletion_protection     = var.environment == "production"
   skip_final_snapshot     = var.environment != "production"
 
-  multi_az = var.environment == "production" # HA only in prod
+  multi_az = var.environment == "production"
 }
-

@@ -24,4 +24,3 @@ output "rds_database_url" {
   value       = "postgresql://devops:${var.db_password}@${aws_db_instance.main.endpoint}/devopsdb"
   sensitive   = true
 }
-
