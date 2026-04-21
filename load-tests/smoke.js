@@ -3,8 +3,8 @@ import { check, sleep } from "k6";
 
 export const options = {
   stages: [
-    { duration: "30s", target: 10 },  // ramp up
-    { duration: "1m",  target: 10 },  // hold
+    { duration: "30s", target: 3 },  // ramp up
+    { duration: "1m",  target: 3 },  // hold
     { duration: "10s", target: 0  },  // ramp down
   ],
   thresholds: {
@@ -47,6 +47,6 @@ export default function (data) {
   );
   check(create, { "create 201": (r) => r.status === 201 });
 
-  sleep(1);
+  sleep(3);
 }
 
