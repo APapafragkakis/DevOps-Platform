@@ -195,42 +195,6 @@ pip install -r requirements.txt
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
-Tests use SQLite in-memory — zero external dependencies.
-
----
-
-## Engineering Decisions
-
-**Why JWT over sessions?**
-JWTs are stateless — no shared session store needed across pods.
-Each token is self-contained and verified with a secret key,
-making horizontal scaling trivial.
-
-**Why Redis caching with graceful degradation?**
-Every Redis call is wrapped in try/except. If Redis goes down,
-the app falls back to Postgres transparently — no cascading failure.
-
-**Why Helm over raw Kubernetes manifests?**
-Helm templates let you deploy to staging and prod from the same chart
-with different values. No copy-pasting manifests, no config drift.
-
-**Why k6 in CI?**
-Catching performance regressions before they hit production.
-The pipeline fails if p95 latency exceeds 500ms or error rate exceeds 1%.
-
-**Why Alembic instead of `create_all`?**
-`create_all` can't alter existing tables and has no rollback.
-Alembic gives versioned, reversible migrations that run automatically on startup.
-
-**Why `maxUnavailable: 0` in rolling updates?**
-With 2 replicas, allowing 1 unavailable = 50% capacity loss during deploy.
-`maxUnavailable: 0` + `maxSurge: 1` ensures zero-downtime deployments.
-
-**Why soft delete?**
-Hard deletes make production debugging much harder.
-`is_active = false` means we can always audit what happened.
-
----
 
 ## Repository Structure
 
