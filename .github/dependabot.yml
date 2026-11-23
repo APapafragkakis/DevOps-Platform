@@ -7,6 +7,10 @@ updates:
     groups:
       python-minor:
         update-types: ["minor", "patch"]
+    ignore:
+      # major versions need a manual upgrade
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -20,8 +24,15 @@ updates:
     directory: /app
     schedule:
       interval: weekly
+    ignore:
+      # stay on Python 3.12 until the dependencies are checked on a newer version
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: terraform
     directory: /terraform
     schedule:
       interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

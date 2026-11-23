@@ -1,19 +1,27 @@
 FROM python:3.12-slim AS builder
 
-WORKDIR /app
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 COPY requirements.txt .
-RUN pip install --upgrade pip setuptools && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.12-slim
 
+# Debian security fixes newer than the base image, and no pip in the runtime image
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip uninstall -y pip \
+    && addgroup --system appgroup \
+    && adduser --system --ingroup appgroup appuser
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 WORKDIR /app
-
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
-
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
 COPY . .
-
 RUN chown -R appuser:appgroup /app
 USER appuser
 

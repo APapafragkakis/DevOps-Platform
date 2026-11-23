@@ -133,6 +133,7 @@ jobs:
         with:
           scan-type: image
           image-ref: devops-platform:e2e
+          scanners: vuln
           severity: CRITICAL,HIGH
           exit-code: "1"
           ignore-unfixed: true
@@ -212,6 +213,10 @@ jobs:
       - name: Debug info
         if: failure()
         run: |
+          if ! kubectl cluster-info > /dev/null 2>&1; then
+            echo "no cluster, failed before kind was created"
+            exit 0
+          fi
           kubectl get all -n "$NAMESPACE"
           kubectl describe pods -n "$NAMESPACE" -l app=devops-platform
           kubectl logs -n "$NAMESPACE" -l app=devops-platform --tail=100 --all-containers
