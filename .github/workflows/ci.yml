@@ -30,6 +30,22 @@ jobs:
       - run: pip install flake8==7.5.0
       - run: flake8 app/ --max-line-length=100 --exclude=app/tests,app/migrations
 
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive -diff
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
   test:
     name: Test
     runs-on: ubuntu-latest
