@@ -32,7 +32,7 @@ rollback: ## Downgrade one migration
 	docker compose exec app alembic downgrade -1
 
 test: ## Run tests with coverage
-	cd app && pytest tests/ -v --cov=. --cov-report=term-missing
+	pytest app/tests/ -v --cov=app --cov-report=term-missing
 
 lint: ## Run flake8
 	flake8 app/ --max-line-length=100 --exclude=app/tests,app/migrations

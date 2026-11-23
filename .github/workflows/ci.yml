@@ -34,6 +34,22 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops
+          POSTGRES_DB: devopsdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d devopsdb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://devops:devops@localhost:5432/devopsdb
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -42,7 +58,14 @@ jobs:
           cache: pip
           cache-dependency-path: app/requirements*.txt
       - run: pip install -r app/requirements-dev.txt
-      - run: pytest app/tests/ -v --cov=app --cov-report=term-missing
+      - name: Run migrations
+        working-directory: app
+        run: alembic upgrade head
+      - name: Check models match migrations
+        working-directory: app
+        run: alembic check
+      - name: Run tests
+        run: pytest app/tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=85
 
   security:
     name: Security Scan
