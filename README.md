@@ -22,8 +22,8 @@ Designed and implemented by an MSc Computer Science student with a focus on Back
 ```
                          ┌──────────────────────────────────┐
                          │          GitHub Actions          │
-                         │  lint → test → scan → build      │
-                         │  → load test (k6) → deploy       │
+                         │  lint → test → scan → load test  │
+                         │  (k6) → build → deploy           │
                          └────────────┬─────────────────────┘
                                       │ push image
                                       ▼
@@ -68,14 +68,14 @@ Designed and implemented by an MSc Computer Science student with a focus on Back
 | Layer              | Technology                                              |
 |--------------------|---------------------------------------------------------|
 | Application        | Python 3.12 / FastAPI / SQLAlchemy                      |
-| Authentication     | JWT (python-jose) + bcrypt password hashing             |
+| Authentication     | JWT (PyJWT) + bcrypt password hashing                   |
 | Database           | PostgreSQL 16 + Alembic migrations                      |
 | Caching            | Redis 7 (write-through, TTL 60s, graceful degradation)  |
 | Rate Limiting      | slowapi (60 req/min reads, 30 req/min writes)           |
 | Observability      | Prometheus metrics + Jaeger distributed tracing         |
 | Containerization   | Docker (multi-stage build, non-root user)               |
 | Local Dev          | Docker Compose (app + postgres + redis + jaeger + grafana) |
-| CI/CD              | GitHub Actions (lint → test → scan → build → load test) |
+| CI/CD              | GitHub Actions (lint → test → scan → load test → build) |
 | Load Testing       | k6 (smoke test in CI, p95 < 500ms threshold)            |
 | Image Registry     | GitHub Container Registry (GHCR)                        |
 | Infrastructure     | Terraform (AWS VPC + EKS + RDS)                         |
@@ -147,16 +147,26 @@ make clean       # Remove containers + volumes
 ## CI/CD Flow
 
 ```
-git push (main)
+git push / PR (main, develop)
     │
     ├── lint         flake8
     ├── test         pytest + coverage (SQLite in CI)
     ├── security     Trivy — CRITICAL/HIGH CVEs
-    ├── build        Docker multi-stage → push to GHCR
-    ├── load-test    k6 smoke test (p95 < 500ms, error rate < 1%)
-    ├── deploy staging   helm upgrade → smoke test /health
-    └── deploy prod      manual approval → helm upgrade → auto-rollback
+    ├── load-test    docker compose + k6 smoke test (p95 < 500ms, error rate < 1%)
+    └── build        Docker multi-stage → push to GHCR (main only)
+
+CD (after CI succeeds on main, only if deploy secrets are set)
+    ├── deploy staging   helm upgrade → smoke test /health → rollback on failure
+    └── deploy prod      manual approval → helm upgrade → rollback on failure
 ```
+
+CD needs these repository settings:
+
+- secrets `KUBE_CONFIG_STAGING`, `KUBE_CONFIG_PROD` (base64 kubeconfig)
+- variables `STAGING_URL`, `PROD_URL`
+- environments `staging` and `production` (add required reviewers on `production`)
+
+The release must be installed once with `helm upgrade --install` (see below) in the `devops-platform-staging` and `devops-platform` namespaces, CD only updates the image.
 
 ---
 
@@ -167,6 +177,7 @@ helm upgrade --install devops-platform ./helm/devops-platform \
   --set secrets.databaseUrl="postgresql://..." \
   --set secrets.secretKey="your-secret-key" \
   --set secrets.redisUrl="redis://..." \
+  --set image.repository="ghcr.io/apapafragkakis/devops-platform" \
   --set image.tag="sha-abc1234"
 ```
 
@@ -191,7 +202,7 @@ aws eks update-kubeconfig --name $(terraform output -raw eks_cluster_name)
 
 ```bash
 cd app
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
@@ -228,7 +239,7 @@ DevOps-Platform/
 ├── terraform/               # AWS VPC + EKS + RDS
 └── .github/
     └── workflows/
-        ├── ci.yml           # lint → test → security → build → load-test
+        ├── ci.yml           # lint → test → security → load-test → build
         └── cd.yml           # staging → approval → production
 ```
 

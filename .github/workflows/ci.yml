@@ -4,24 +4,30 @@ on:
   push:
     branches: ["main", "develop"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "develop"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.12"
-  IMAGE_NAME: devops-platform
 
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-          cache-dependency-path: app/requirements.txt
-      - run: pip install flake8
+          cache: pip
+          cache-dependency-path: app/requirements*.txt
+      - run: pip install flake8==7.5.0
       - run: flake8 app/ --max-line-length=100 --exclude=app/tests,app/migrations
 
   test:
@@ -29,66 +35,73 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-          cache-dependency-path: app/requirements.txt
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r app/requirements.txt
-          pip install aiosqlite
-      - name: Run tests
-        run: |
-          pip install pytest-cov
-          pytest app/tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
+          cache: pip
+          cache-dependency-path: app/requirements*.txt
+      - run: pip install -r app/requirements-dev.txt
+      - run: pytest app/tests/ -v --cov=app --cov-report=term-missing
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
+      - uses: actions/checkout@v7
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
-          scan-type: "fs"
-          scan-ref: "./app"
-          severity: "CRITICAL,HIGH"
+          scan-type: fs
+          scan-ref: ./app
+          severity: CRITICAL,HIGH
           exit-code: "1"
           ignore-unfixed: true
+
+  load-test:
+    name: Load Test
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start app with postgres and redis
+        run: docker compose up -d --build --wait --wait-timeout 180 app
+      - uses: grafana/setup-k6-action@v1
+      - name: Run k6 smoke test
+        run: k6 run load-tests/smoke.js
+      - name: App logs
+        if: failure()
+        run: docker compose logs app
+      - name: Stop services
+        if: always()
+        run: docker compose down -v
 
   build:
     name: Build & Push Image
     runs-on: ubuntu-latest
-    needs: [test, security]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: load-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v7
+      - name: Set image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devops-platform" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=sha,prefix=sha-
-            type=raw,value=latest,enable=true
-      - uses: docker/build-push-action@v5
+            type=raw,value=latest
+      - uses: docker/build-push-action@v7
         with:
           context: ./app
           push: true
@@ -96,32 +109,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  load-test:
-    name: Load Test
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Start services
-        run: |
-          docker compose up -d --build
-          sleep 30
-      - name: Wait for app
-        run: |
-          for i in {1..10}; do
-            curl -sf http://localhost:8000/health && break
-            sleep 5
-          done
-      - name: Run k6 load test
-        uses: grafana/k6-action@v0.3.1
-        with:
-          filename: load-tests/smoke.js
-        env:
-          env:
-          BASE_URL: http://172.17.0.1:8000
-      - name: Stop services
-        if: always()
-        run: docker compose down -v
-
