@@ -1,29 +1,30 @@
 # DevOps Platform
 
-Production-grade DevOps platform demonstrating end-to-end cloud-native system design and deployment.
+A FastAPI service with the full delivery setup around it: CI/CD on GitHub Actions, a Helm chart tested on Kubernetes in CI, Terraform for AWS, and metrics and tracing.
 
-Built as a real-world backend + DevOps project, this platform showcases hands-on experience with Kubernetes, Docker, CI/CD pipelines, Infrastructure as Code (Terraform on AWS), and distributed system design.
-
-Designed and implemented by an MSc Computer Science student with a focus on Backend & DevOps engineering.
+I built it as a hands-on backend and DevOps project during my MSc in Computer Science.
 
 ---
 
-## Key Highlights
+## What's in it
 
-- End-to-end CI/CD pipeline (GitHub Actions → GHCR → Kubernetes)
-- Kubernetes deployment on AWS EKS with Helm and HPA autoscaling
-- Infrastructure provisioning with Terraform (VPC, EKS, RDS)
-- Production-ready backend (FastAPI + PostgreSQL + Redis)
-- Observability stack (Prometheus, Grafana, Jaeger)
-- Load-tested system (k6, p95 < 500ms)
+- CI on every push and PR: lint, tests on Postgres, migration checks, security scans, k6 load test, and a Kubernetes end-to-end test of the Helm chart on kind
+- Images pushed to GHCR from `main` and from version tags, with a GitHub Release per tag
+- CD workflow that deploys to staging and production with Helm and rolls back on failure (runs once the cluster secrets are set, see below)
+- Terraform for an AWS setup (VPC, EKS, RDS), checked with `fmt` and `validate` in CI
+- FastAPI + PostgreSQL + Redis backend with JWT auth, caching and rate limiting
+- Prometheus metrics, Grafana, and OpenTelemetry tracing to Jaeger
+- Dependabot for Python packages, GitHub Actions, the Docker base image and Terraform
 
 ## Architecture
+
+Target AWS setup from `terraform/` and the Helm chart. It is not deployed anywhere right now, the chart is tested on kind in CI instead.
 
 ```
                          ┌──────────────────────────────────┐
                          │          GitHub Actions          │
                          │  lint → test → scan → load test  │
-                         │  (k6) → build → deploy           │
+                         │  → kind e2e → build → deploy     │
                          └────────────┬─────────────────────┘
                                       │ push image
                                       ▼
@@ -49,16 +50,10 @@ Designed and implemented by an MSc Computer Science student with a focus on Back
           │   └───────────────┴──────────┴───────────────────┘    │
           │         │                        │                    │
           │  ┌──────▼──────┐       ┌─────────▼──────┐             │
-          │  │ RDS Postgres │      │ ElastiCache    │            │
-          │  │ (private)    │      │ Redis          │            │
+          │  │ RDS Postgres │      │     Redis      │             │
+          │  │ (private)    │      │                │             │
           │  └─────────────┘       └────────────────┘             │
           └───────────────────────────────────────────────────────┘
-                                   │
-                    ┌──────────────▼───────────────┐
-                    │         Observability         │
-                    │  Prometheus → Grafana :3000   │
-                    │  Jaeger tracing   :16686      │
-                    └──────────────────────────────┘
 ```
 
 ---
@@ -70,17 +65,17 @@ Designed and implemented by an MSc Computer Science student with a focus on Back
 | Application        | Python 3.12 / FastAPI / SQLAlchemy                      |
 | Authentication     | JWT (PyJWT) + bcrypt password hashing                   |
 | Database           | PostgreSQL 16 + Alembic migrations                      |
-| Caching            | Redis 7 (write-through, TTL 60s, graceful degradation)  |
+| Caching            | Redis 7 (cache-aside, TTL 60s, app keeps working without Redis) |
 | Rate Limiting      | slowapi (60 req/min reads, 30 req/min writes)           |
-| Observability      | Prometheus metrics + Jaeger distributed tracing         |
+| Observability      | Prometheus + Grafana, OpenTelemetry tracing to Jaeger   |
 | Containerization   | Docker (multi-stage build, non-root user)               |
-| Local Dev          | Docker Compose (app + postgres + redis + jaeger + grafana) |
-| CI/CD              | GitHub Actions (lint → test → scan → load test → build) |
-| Load Testing       | k6 (smoke test in CI, p95 < 500ms threshold)            |
+| Local Dev          | Docker Compose (app + postgres + redis + jaeger + prometheus + grafana) |
+| CI/CD              | GitHub Actions                                          |
+| Testing            | pytest on Postgres, k6 load test, Helm e2e on kind      |
+| Security           | Trivy (dependencies and image), Dependabot              |
 | Image Registry     | GitHub Container Registry (GHCR)                        |
 | Infrastructure     | Terraform (AWS VPC + EKS + RDS)                         |
 | Orchestration      | Kubernetes via Helm chart (HPA, rolling updates)        |
-| Security Scanning  | Trivy (CRITICAL/HIGH CVEs)                              |
 
 ---
 
@@ -102,6 +97,8 @@ docker compose up -d --build
 | Grafana    | http://localhost:3000 (admin/admin) |
 | Prometheus | http://localhost:9090          |
 | Jaeger UI  | http://localhost:16686         |
+
+Grafana comes with Prometheus already added as a data source. Traces show up in Jaeger under the `devops-platform` service after a few requests.
 
 ---
 
@@ -131,6 +128,7 @@ Or use the **Authorize** button in Swagger UI at `/docs`.
 ## Make Commands
 
 ```bash
+make help        # List all commands
 make up          # Start all services
 make down        # Stop all services
 make logs        # Follow app logs
@@ -147,26 +145,40 @@ make clean       # Remove containers + volumes
 ## CI/CD Flow
 
 ```
-git push / PR (main, develop)
+CI: push / PR (main, develop), tags v*
     │
     ├── lint         flake8
-    ├── test         pytest + coverage (SQLite in CI)
-    ├── security     Trivy — CRITICAL/HIGH CVEs
+    ├── terraform    fmt -check + validate
+    ├── test         Postgres service → alembic upgrade + alembic check → pytest (coverage ≥ 85%)
+    ├── security     Trivy on Python dependencies
     ├── load-test    docker compose + k6 smoke test (p95 < 500ms, error rate < 1%)
-    └── build        Docker multi-stage → push to GHCR (main only)
+    ├── e2e          build image → Trivy image scan → helm lint → kind cluster → helm install/upgrade → API smoke test
+    ├── build        push image to GHCR (main and v* tags only)
+    └── release      GitHub Release with generated notes (v* tags only)
 
-CD (after CI succeeds on main, only if deploy secrets are set)
+CD: after CI succeeds on main, only if deploy settings exist
     ├── deploy staging   helm upgrade → smoke test /health → rollback on failure
     └── deploy prod      manual approval → helm upgrade → rollback on failure
 ```
 
+Image tags: `sha-<short sha>` for every build, `latest` for `main`, and `X.Y.Z` / `X.Y` for version tags.
+
 CD needs these repository settings:
 
-- secrets `KUBE_CONFIG_STAGING`, `KUBE_CONFIG_PROD` (base64 kubeconfig)
+- secrets `KUBE_CONFIG_STAGING`, `KUBE_CONFIG_PROD` (base64 kubeconfig, as repository secrets)
 - variables `STAGING_URL`, `PROD_URL`
 - environments `staging` and `production` (add required reviewers on `production`)
 
 The release must be installed once with `helm upgrade --install` (see below) in the `devops-platform-staging` and `devops-platform` namespaces, CD only updates the image.
+
+### Releases
+
+```bash
+git tag v3.0.0
+git push origin v3.0.0
+```
+
+CI runs on the tag, pushes `ghcr.io/apapafragkakis/devops-platform:3.0.0` and creates the GitHub Release.
 
 ---
 
@@ -174,12 +186,16 @@ The release must be installed once with `helm upgrade --install` (see below) in 
 
 ```bash
 helm upgrade --install devops-platform ./helm/devops-platform \
+  -n devops-platform --create-namespace \
   --set secrets.databaseUrl="postgresql://..." \
   --set secrets.secretKey="your-secret-key" \
   --set secrets.redisUrl="redis://..." \
-  --set image.repository="ghcr.io/apapafragkakis/devops-platform" \
   --set image.tag="sha-abc1234"
 ```
+
+Pods run database migrations on start. A Postgres advisory lock makes sure only one pod migrates at a time.
+
+To send traces, set `env.OTEL_EXPORTER_OTLP_ENDPOINT` to your OTLP HTTP collector.
 
 ---
 
@@ -201,11 +217,20 @@ aws eks update-kubeconfig --name $(terraform output -raw eks_cluster_name)
 ## Run Tests
 
 ```bash
-cd app
-pip install -r requirements-dev.txt
-pytest tests/ -v --cov=. --cov-report=term-missing
+pip install -r app/requirements-dev.txt
+pytest app/tests/ -v --cov=app --cov-report=term-missing
 ```
 
+Tests use SQLite by default. To run them on Postgres like CI does, set `DATABASE_URL`:
+
+```bash
+docker compose up -d postgres
+export DATABASE_URL=postgresql://devops:devops@localhost:5432/devopsdb
+(cd app && alembic upgrade head && alembic check)
+pytest app/tests/ -v --cov=app
+```
+
+---
 
 ## Repository Structure
 
@@ -215,7 +240,7 @@ DevOps-Platform/
 │   ├── main.py              # routes, rate limiting, JWT protection
 │   ├── auth.py              # JWT token creation and validation
 │   ├── cache.py             # Redis layer with graceful degradation
-│   ├── tracing.py           # OpenTelemetry / Jaeger setup
+│   ├── tracing.py           # OpenTelemetry setup (OTLP to Jaeger)
 │   ├── database.py
 │   ├── models.py
 │   ├── schemas.py
@@ -226,20 +251,24 @@ DevOps-Platform/
 │   │       ├── 0001_initial_items_table.py
 │   │       └── 0002_add_users_table.py
 │   └── tests/
-│       └── test_main.py     # 11 tests, SQLite in-memory
+│       ├── test_main.py     # API tests
+│       └── test_cache.py    # cache tests with fakeredis
 ├── helm/
-│   └── devops-platform/     # Helm chart (Deployment, Service, HPA, Secret)
+│   └── devops-platform/     # Helm chart (Deployment, Service, Ingress, HPA, Secret)
+├── k8s/
+│   └── e2e-deps.yaml        # Postgres + Redis for the kind e2e job
 ├── load-tests/
 │   └── smoke.js             # k6 load test (runs in CI)
-├── docker-compose.yml       # app + postgres + redis + jaeger + grafana
-├── Makefile
 ├── monitoring/
-│   └── prometheus.yml
-├── k8s/                     # raw manifests (superseded by Helm chart)
+│   ├── prometheus.yml
+│   └── grafana/             # Grafana data source provisioning
 ├── terraform/               # AWS VPC + EKS + RDS
+├── docker-compose.yml
+├── Makefile
 └── .github/
+    ├── dependabot.yml
     └── workflows/
-        ├── ci.yml           # lint → test → security → load-test → build
+        ├── ci.yml           # lint, tests, scans, load test, e2e, build, release
         └── cd.yml           # staging → approval → production
 ```
 
@@ -247,9 +276,9 @@ DevOps-Platform/
 
 ## What I'd Add Next
 
-- ArgoCD for GitOps-style continuous delivery
-- AWS Secrets Manager integration
-- Alembic migrations in the CD pipeline
+- Deploy to a real cluster and turn on CD
+- ArgoCD for GitOps-style delivery
+- AWS Secrets Manager / External Secrets instead of Helm-managed secrets
 - JWT refresh tokens
 - Grafana dashboards as code
 
@@ -258,4 +287,3 @@ DevOps-Platform/
 ## License
 
 MIT
-

@@ -12,7 +12,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 import crud
-import models
 import schemas
 from auth import (
     create_access_token,
@@ -26,8 +25,6 @@ from tracing import setup_tracing
 
 setup_logging()
 logger = get_logger(__name__)
-
-models.Base.metadata.create_all(bind=engine)
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
