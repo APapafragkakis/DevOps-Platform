@@ -51,6 +51,12 @@ spec:
               value: {{ .Values.env.CACHE_TTL_SECONDS | quote }}
             - name: ACCESS_TOKEN_EXPIRE_MINUTES
               value: {{ .Values.env.ACCESS_TOKEN_EXPIRE_MINUTES | quote }}
+            {{- with .Values.env.OTEL_EXPORTER_OTLP_ENDPOINT }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ $.Release.Name | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           livenessProbe:

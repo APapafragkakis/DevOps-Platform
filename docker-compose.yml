@@ -14,13 +14,15 @@ services:
       CACHE_TTL_SECONDS: "60"
       SECRET_KEY: "change-me-in-production-use-a-long-random-string"
       ACCESS_TOKEN_EXPIRE_MINUTES: "30"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      SERVICE_NAME: "devops-platform"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "devops-platform"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     restart: unless-stopped
     networks:
       - devops_net
@@ -73,6 +75,7 @@ services:
     ports:
       - "16686:16686"   # Jaeger UI
       - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     networks:

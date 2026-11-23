@@ -24,3 +24,7 @@ python-multipart==0.0.34
 
 # Observability
 prometheus-fastapi-instrumentator==8.1.0
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2
+opentelemetry-instrumentation-fastapi==0.66b2
+opentelemetry-instrumentation-sqlalchemy==0.66b2

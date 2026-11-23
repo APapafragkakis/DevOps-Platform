@@ -34,6 +34,8 @@ env:
   LOG_LEVEL: INFO
   ACCESS_TOKEN_EXPIRE_MINUTES: "30"
   CACHE_TTL_SECONDS: "60"
+  # tracing is off when empty, e.g. http://jaeger-collector.observability:4318
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
 
 secrets:
   databaseUrl: ""      # set via --set or external secret
