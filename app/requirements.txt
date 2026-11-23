@@ -11,7 +11,7 @@ alembic==1.13.1
 pydantic==2.14.4
 
 # Caching
-redis==5.0.6
+redis==8.1.0
 
 # Rate limiting
 slowapi==0.1.9
