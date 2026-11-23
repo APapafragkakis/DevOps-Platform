@@ -67,6 +67,11 @@ def test_login():
     assert "access_token" in r.json()
 
 
+def test_register_rejects_too_long_password():
+    r = client.post("/auth/register", json={"username": "long", "password": "x" * 73})
+    assert r.status_code == 422
+
+
 def test_login_wrong_password():
     client.post("/auth/register", json={"username": "dave", "password": "right"})
     r = client.post("/auth/token", data={"username": "dave", "password": "wrong"})

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -23,6 +23,15 @@ class Item(ItemBase):
 class UserCreate(BaseModel):
     username: str
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value: str) -> str:
+        if not value:
+            raise ValueError("password must not be empty")
+        if len(value.encode()) > 72:
+            raise ValueError("password must be at most 72 bytes")
+        return value
 
 
 class UserOut(BaseModel):
