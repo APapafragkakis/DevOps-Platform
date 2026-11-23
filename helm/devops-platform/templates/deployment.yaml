@@ -46,7 +46,9 @@ spec:
                   name: {{ .Release.Name }}-secrets
                   key: REDIS_URL
             - name: LOG_LEVEL
-              value: {{ .Values.env.LOG_LEVEL }}
+              value: {{ .Values.env.LOG_LEVEL | quote }}
+            - name: WEB_CONCURRENCY
+              value: {{ .Values.env.WEB_CONCURRENCY | quote }}
             - name: CACHE_TTL_SECONDS
               value: {{ .Values.env.CACHE_TTL_SECONDS | quote }}
             - name: ACCESS_TOKEN_EXPIRE_MINUTES
