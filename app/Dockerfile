@@ -1,10 +1,10 @@
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --upgrade pip setuptools && pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
