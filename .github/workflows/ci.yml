@@ -130,6 +130,9 @@ jobs:
 
       - name: Scan image
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          # print only the findings, not the per-package summary
+          TRIVY_TABLE_MODE: detailed
         with:
           scan-type: image
           image-ref: devops-platform:e2e

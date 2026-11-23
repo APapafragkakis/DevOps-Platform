@@ -4,8 +4,9 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# pip is not needed at runtime, and its vendored SBOM gets flagged by Trivy
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y pip
 
 FROM python:3.12-slim
 
