@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/YOUR_GITHUB_USERNAME/devops-platform/devops-platform
+  repository: ghcr.io/apapafragkakis/devops-platform
   tag: latest
   pullPolicy: Always
 

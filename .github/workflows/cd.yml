@@ -1,130 +1,137 @@
 name: CD
 
 on:
-  # Triggers only after CI completes successfully on main
   workflow_run:
     workflows: ["CI"]
     types: [completed]
     branches: ["main"]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: cd
+  cancel-in-progress: false
+
 env:
-  IMAGE_NAME: devops-platform
-  K8S_NAMESPACE: devops-platform
+  RELEASE: devops-platform
+  NAMESPACE: devops-platform
+  HELM_VERSION: v4.3.2
 
 jobs:
+  check:
+    name: Check deploy config
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    outputs:
+      staging: ${{ steps.check.outputs.staging }}
+      production: ${{ steps.check.outputs.production }}
+    steps:
+      - id: check
+        env:
+          KUBE_CONFIG_STAGING: ${{ secrets.KUBE_CONFIG_STAGING }}
+          KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
+          STAGING_URL: ${{ vars.STAGING_URL }}
+          PROD_URL: ${{ vars.PROD_URL }}
+        run: |
+          staging=false
+          production=false
+          if [ -n "$KUBE_CONFIG_STAGING" ] && [ -n "$STAGING_URL" ]; then
+            staging=true
+          fi
+          if [ -n "$KUBE_CONFIG_PROD" ] && [ -n "$PROD_URL" ]; then
+            production=true
+          fi
+          echo "staging=$staging" >> "$GITHUB_OUTPUT"
+          echo "production=$production" >> "$GITHUB_OUTPUT"
+          echo "staging deploy: $staging, production deploy: $production" >> "$GITHUB_STEP_SUMMARY"
+
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: check
+    if: needs.check.outputs.staging == 'true'
     environment:
       name: staging
-      url: https://staging.devops-platform.example.com
-
+      url: ${{ vars.STAGING_URL }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set image tag from triggering CI run
-        id: vars
-        run: |
-          SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
-          echo "IMAGE_TAG=sha-${SHA}" >> $GITHUB_OUTPUT
-          echo "Deploying image tag: sha-${SHA}"
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+      - uses: actions/checkout@v7
         with:
-          version: "v1.30.0"
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Configure kubeconfig (staging cluster)
+      - name: Set image
         run: |
-          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig.yaml
-          echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devops-platform" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=sha-$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)" >> "$GITHUB_ENV"
 
-      - name: Deploy to staging
-        run: |
-          # Update the image tag in the deployment
-          kubectl set image deployment/devops-platform \
-            app=ghcr.io/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }} \
-            -n ${{ env.K8S_NAMESPACE }}-staging
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
 
-      - name: Wait for rollout to complete
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_STAGING }}
         run: |
-          kubectl rollout status deployment/devops-platform \
-            -n ${{ env.K8S_NAMESPACE }}-staging \
-            --timeout=120s
+          echo "$KUBE_CONFIG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
 
-      - name: Run smoke test against staging
+      - name: Helm upgrade
         run: |
-          STAGING_URL="https://staging.devops-platform.example.com"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${STAGING_URL}/health)
-          if [ "$STATUS" != "200" ]; then
-            echo "Smoke test failed — /health returned HTTP $STATUS"
-            exit 1
-          fi
-          echo "Smoke test passed"
+          helm upgrade "$RELEASE" ./helm/devops-platform \
+            -n "$NAMESPACE-staging" \
+            --reuse-values \
+            --set image.repository="$IMAGE" \
+            --set image.tag="$IMAGE_TAG" \
+            --wait --timeout 3m
+
+      - name: Smoke test
+        run: curl -sf --retry 5 --retry-delay 5 "${{ vars.STAGING_URL }}/health"
+
+      - name: Rollback
+        if: failure()
+        run: helm rollback "$RELEASE" -n "$NAMESPACE-staging" --wait --timeout 3m || true
 
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: deploy-staging
+    needs: [check, deploy-staging]
+    if: needs.check.outputs.production == 'true'
     environment:
       name: production
-      url: https://devops-platform.example.com
-
+      url: ${{ vars.PROD_URL }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set image tag
-        id: vars
-        run: |
-          SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
-          echo "IMAGE_TAG=sha-${SHA}" >> $GITHUB_OUTPUT
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+      - uses: actions/checkout@v7
         with:
-          version: "v1.30.0"
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Configure kubeconfig (production cluster)
+      - name: Set image
         run: |
-          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig.yaml
-          echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devops-platform" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=sha-$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)" >> "$GITHUB_ENV"
 
-      - name: Deploy to production
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_PROD }}
         run: |
-          kubectl set image deployment/devops-platform \
-            app=ghcr.io/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }} \
-            -n ${{ env.K8S_NAMESPACE }}
+          echo "$KUBE_CONFIG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
 
-      - name: Wait for rollout
+      - name: Helm upgrade
         run: |
-          kubectl rollout status deployment/devops-platform \
-            -n ${{ env.K8S_NAMESPACE }} \
-            --timeout=180s
+          helm upgrade "$RELEASE" ./helm/devops-platform \
+            -n "$NAMESPACE" \
+            --reuse-values \
+            --set image.repository="$IMAGE" \
+            --set image.tag="$IMAGE_TAG" \
+            --wait --timeout 3m
 
-      - name: Run smoke test against production
-        run: |
-          PROD_URL="https://devops-platform.example.com"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${PROD_URL}/health)
-          if [ "$STATUS" != "200" ]; then
-            echo "Production smoke test failed — rolling back..."
-            kubectl rollout undo deployment/devops-platform -n ${{ env.K8S_NAMESPACE }}
-            exit 1
-          fi
-          echo "Production smoke test passed"
+      - name: Smoke test
+        run: curl -sf --retry 5 --retry-delay 5 "${{ vars.PROD_URL }}/health"
 
-      - name: Notify on success
-        if: success()
-        run: |
-          echo "Deployed ${{ steps.vars.outputs.IMAGE_TAG }} to production successfully"
-          # Add Slack/Discord webhook here if needed
-          # curl -X POST ${{ secrets.SLACK_WEBHOOK }} -d '{"text":"Deployed to prod successfully"}'
-
-      - name: Rollback on failure
+      - name: Rollback
         if: failure()
-        run: |
-          echo "Deployment failed"
-          kubectl rollout undo deployment/devops-platform -n ${{ env.K8S_NAMESPACE }}
-
+        run: helm rollback "$RELEASE" -n "$NAMESPACE" --wait --timeout 3m || true

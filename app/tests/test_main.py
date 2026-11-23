@@ -1,6 +1,6 @@
 import os
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
-os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["SECRET_KEY"] = "test-secret-key-only-used-in-unit-tests"
 
 import pytest
 from fastapi.testclient import TestClient
